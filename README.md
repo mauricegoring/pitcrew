@@ -27,7 +27,9 @@ declared working hours, connected a payout account, and been vetted.
 | `lib/labor.js` | Labour estimates, seeded then learned from real jobs |
 | `lib/money.js` | Line items, fee models, and a balanced double-entry ledger |
 | `lib/verification.js` | Turo export inspection, lane assignment, review ranking |
-| `db/001`–`006` | Taxonomy, identity, rates and availability, bookings, money, verification |
+| `lib/demand.js` | Imported HostPitCrew demand — launch readiness, rate guidance |
+| `lib/handoff.js` | Signed verification hand-off, so nobody verifies twice |
+| `db/001`–`007` | Taxonomy, identity, rates and availability, bookings, money, verification, ecosystem |
 
 Every domain module is pure and I/O-free. Pricing and scheduling are the parts
 of this product most likely to be argued about, so they have to be reproducible
@@ -84,6 +86,19 @@ blurred results, no "verify to see prices". The badge adds; it never withholds.
 **Verification is free and instant, forever.** It is the acquisition hook, not a
 tier. There is no price anywhere in `lib/verification.js` and there must never
 be one.
+
+**HostPitCrew keeps running as the demand engine.** It holds the SEO surface and
+the captured demand; PitCrew holds the transaction. Two things cross the seam and
+nothing else: a signed verification claim, so a host who proved themselves there
+is verified here, and aggregate demand counts. See [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md).
+
+**Imported demand never reaches the pricing engine.** The demand multiplier gates
+on *completed PitCrew bookings* — evidence about our own supply. HostPitCrew
+search volume says a metro wants mechanics; it says nothing about whether ours
+are busy, because on day one we have none. Feeding it in would surge-price the
+first customer in a new metro against a supply of zero. `toLaunchSignal()`
+returns no `observations` field at all, and a test proves a metro with 150,000
+imported searches still quotes at exactly 1.000×.
 
 **Insurance is coverage lines, not a boolean.** General Liability excludes
 damage to the customer's vehicle in the mechanic's care, custody and control —

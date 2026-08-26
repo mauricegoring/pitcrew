@@ -25,6 +25,7 @@ const ORDER = [
   '004-bookings.sql',
   '005-money.sql',
   '006-verification.sql',
+  '007-ecosystem.sql',
 ];
 
 function migrationFiles() {

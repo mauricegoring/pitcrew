@@ -313,6 +313,85 @@ let failed = false;
 
     await c.query('ROLLBACK');
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // The seam with HostPitCrew.
+    // ═══════════════════════════════════════════════════════════════════════
+    await c.query('BEGIN');
+    await c.query(`INSERT INTO accounts (email,role) VALUES ('eco@example.com','customer')`);
+    const { rows: [eco] } = await c.query(`SELECT id FROM accounts WHERE email='eco@example.com'`);
+
+    // A host verified on HostPitCrew is verified here, without re-uploading.
+    const jti = '44444444-4444-4444-4444-444444444444';
+    await c.query(`INSERT INTO host_verifications (account_id,method,handoff_jti,handoff_subject)
+                   VALUES ($1,'hostpitcrew',$2,'hpc:host:9182')`, [eco.id, jti]);
+    const { rows: [ev] } = await c.query(`SELECT is_verified_host($1) v`, [eco.id]);
+    eq(ev.v, true, 'a hand-off from HostPitCrew confers the badge — one product, two surfaces');
+
+    // A captured claim cannot be replayed into a second account.
+    await c.query(`INSERT INTO accounts (email,role) VALUES ('eco2@example.com','customer')`);
+    const { rows: [eco2] } = await c.query(`SELECT id FROM accounts WHERE email='eco2@example.com'`);
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO host_verifications (account_id,method,handoff_jti,handoff_subject)
+                     VALUES ($1,'hostpitcrew',$2,'hpc:host:other')`, [eco2.id, jti]);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23505', 'a hand-off claim is spent exactly once');
+
+    // And one HostPitCrew identity maps to one PitCrew identity.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO host_verifications (account_id,method,handoff_jti,handoff_subject)
+                     VALUES ($1,'hostpitcrew',gen_random_uuid(),'hpc:host:9182')`, [eco2.id]);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23505', 'one HostPitCrew host is one PitCrew host');
+
+    // A hand-off cannot borrow another path's evidence.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO host_verifications (account_id,method,handoff_jti,handoff_subject,csv_sha256)
+                     VALUES ($1,'hostpitcrew',gen_random_uuid(),'hpc:host:x',$2)`, [eco2.id, 'b'.repeat(64)]);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23514', 'each verification path carries only its own evidence');
+
+    // ── Imported demand is aggregate, and stays out of the pricing path.
+    await c.query(`INSERT INTO imported_demand (metro_slug,service_slug,audience,period_start,period_end,searches,leads)
+                   VALUES ('las-vegas','brakes','public','2026-04-01','2026-06-30',400,30),
+                          ('las-vegas','brakes','host','2026-04-01','2026-06-30',120,18)`);
+    const { rows: [sig] } = await c.query(`SELECT * FROM metro_launch_signal WHERE metro_slug='las-vegas'`);
+    eq(Number(sig.searches), 520, 'imported searches aggregate');
+    eq(Number(sig.host_leads), 18, 'the host lane stays distinct');
+    eq(Number(sig.weighted_leads), 30 + 4*18, 'fleet demand is weighted for the v2 conversation');
+
+    // The same period cannot be imported twice and double-count.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO imported_demand (metro_slug,service_slug,audience,period_start,period_end,searches,leads)
+                     VALUES ('las-vegas','brakes','public','2026-04-01','2026-06-30',400,30)`);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23505', 're-importing a period does not double-count it');
+
+    // The boundary, asserted structurally: nothing the pricing path reads
+    // touches imported demand.
+    const { rows: deps } = await c.query(`
+      SELECT DISTINCT cl.relname AS referenced
+      FROM pg_depend d
+      JOIN pg_rewrite rw ON rw.oid = d.objid
+      JOIN pg_class src ON src.oid = rw.ev_class
+      JOIN pg_class cl  ON cl.oid = d.refobjid
+      WHERE src.relname IN ('mechanic_ratings')`);
+    assert(!deps.some(r => r.referenced === 'imported_demand'),
+      'no rating or pricing view reads imported demand');
+
+    await c.query('ROLLBACK');
+
     console.log('\n[test] SCHEMA — ALL CHECKS PASSED');
   } catch (e) {
     failed = true;
