@@ -1,0 +1,52 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  units:
+    name: Domain modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      # These are pure and need no database, so they run on their own and fail
+      # fast. The schema job below is the slow one.
+      - run: npm run test:pricing
+      - run: npm run test:labor
+      - run: npm run test:availability
+      - run: npm run test:money
+
+  schema:
+    name: SQL migrations (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pitcrew_test
+        ports: ['5432:5432']
+        # Without this the job races the container and connects to nothing.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - name: Apply migrations and prove the constraints bite
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/pitcrew_test
+        run: npm run test:schema
