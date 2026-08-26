@@ -1,0 +1,20 @@
+{
+  "name": "pitcrew",
+  "version": "0.1.0",
+  "description": "Mobile-mechanic marketplace — book a vetted mechanic who comes to the car",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "test": "node test/pricing.test.js && node test/labor.test.js && node test/availability.test.js && node test/money.test.js && node test/schema.test.js",
+    "test:pricing": "node test/pricing.test.js",
+    "test:labor": "node test/labor.test.js",
+    "test:availability": "node test/availability.test.js",
+    "test:money": "node test/money.test.js",
+    "test:schema": "node test/schema.test.js",
+    "db:apply": "node scripts/db-apply.js"
+  },
+  "engines": { "node": ">=20.0.0" },
+  "devDependencies": {
+    "pg": "^8.13.0"
+  }
+}
