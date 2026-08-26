@@ -181,6 +181,138 @@ let failed = false;
     await c.query('ROLLBACK');
     eq(code, '23514', 'a row cannot be both a debit and a credit');
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // The moat, at the database level. Application code can be refactored
+    // around; these rules cannot.
+    // ═══════════════════════════════════════════════════════════════════════
+    await c.query('BEGIN');
+    // The earlier fixtures were rolled back with their transaction, so this
+    // block stands up its own.
+    await c.query(`INSERT INTO services (slug,name,category) VALUES ('moat-svc','Moat service','brakes')`);
+    await c.query(`INSERT INTO accounts (email,role) VALUES ('moat-mech@example.com','mechanic')`);
+    const { rows: [ma] } = await c.query(`SELECT id FROM accounts WHERE email='moat-mech@example.com'`);
+    await c.query(`INSERT INTO mechanics (account_id,business_name,slug) VALUES ($1,'Moat Crew','moat-crew')`, [ma.id]);
+    const { rows: [mMech] } = await c.query(`SELECT id FROM mechanics WHERE slug='moat-crew'`);
+    const { rows: [mSvc] }  = await c.query(`SELECT id FROM services WHERE slug='moat-svc'`);
+
+    await c.query(`INSERT INTO accounts (email,role) VALUES ('cust@example.com','customer'),('hostie@example.com','customer')`);
+    const { rows: [cust] } = await c.query(`SELECT id FROM accounts WHERE email='cust@example.com'`);
+    const { rows: [host] } = await c.query(`SELECT id FROM accounts WHERE email='hostie@example.com'`);
+
+    const mkDone = async (customerId, h1, h2) => {
+      const { rows: [b] } = await c.query(
+        `INSERT INTO bookings (mechanic_id,customer_id,service_id,starts_at,ends_at,status)
+         VALUES ($1,$2,$3,$4,$5,'completed') RETURNING id`,
+        [mMech.id, customerId, mSvc.id, H(h1), H(h2)]);
+      return b.id;
+    };
+
+    // ── A review requires a COMPLETED booking. In a directory the floor was a
+    // captured lead; here money changed hands, which is harder to fake.
+    const { rows: [open] } = await c.query(
+      `INSERT INTO bookings (mechanic_id,customer_id,service_id,starts_at,ends_at,status)
+       VALUES ($1,$2,$3,$4,$5,'scheduled') RETURNING id`,
+      [mMech.id, cust.id, mSvc.id, H(6), H(7)]);
+    let msg = '';
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO reviews (mechanic_id,author_id,booking_id,rating) VALUES ($1,$2,$3,5)`,
+        [mMech.id, cust.id, open.id]);
+    } catch (e) { msg = e.message; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    assert(/completed booking/.test(msg), 'no completed job, no review');
+
+    // ── Only the customer on the booking may review it.
+    const jobA = await mkDone(cust.id, 8, 9);
+    msg = '';
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO reviews (mechanic_id,author_id,booking_id,rating) VALUES ($1,$2,$3,5)`,
+        [mMech.id, host.id, jobA]);
+    } catch (e) { msg = e.message; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    assert(/only the customer/.test(msg), 'a stranger cannot review someone else\'s job');
+
+    // ── An unverified reviewer is stamped public even when they ask for gold.
+    // This is the single most important assertion in the suite: the badge
+    // cannot be claimed by the client.
+    const { rows: [r1] } = await c.query(
+      `INSERT INTO reviews (mechanic_id,author_id,booking_id,rating,reviewer_class)
+       VALUES ($1,$2,$3,5,'verified_host') RETURNING reviewer_class`,
+      [mMech.id, cust.id, jobA]);
+    eq(r1.reviewer_class, 'public', 'claiming the badge does not grant it');
+
+    // ── Verify the other account, and the SAME insert now earns gold —
+    // because the evidence exists, not because the request changed.
+    await c.query(`INSERT INTO host_verifications (account_id,method,csv_sha256,trips_found,vehicles_found)
+                   VALUES ($1,'turo_csv',$2,14,3)`, [host.id, 'a'.repeat(64)]);
+    const { rows: [vh] } = await c.query(`SELECT is_verified_host($1) v`, [host.id]);
+    eq(vh.v, true, 'the export verified the host');
+
+    const jobB = await mkDone(host.id, 10, 11);
+    const { rows: [r2] } = await c.query(
+      `INSERT INTO reviews (mechanic_id,author_id,booking_id,rating) VALUES ($1,$2,$3,3)
+       RETURNING reviewer_class`, [mMech.id, host.id, jobB]);
+    eq(r2.reviewer_class, 'verified_host', 'a proven host earns the badge without asking');
+
+    // ── One export verifies one identity, forever.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO host_verifications (account_id,method,csv_sha256) VALUES ($1,'turo_csv',$2)`,
+        [cust.id, 'a'.repeat(64)]);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23505', 'the same export cannot verify a second account');
+
+    // ── Each verification path carries its own evidence and cannot borrow.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO host_verifications (account_id,method) VALUES ($1,'turo_csv')`, [cust.id]);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23514', 'a CSV verification with no CSV is refused');
+
+    // ── One review per job — no stacking praise on a single booking.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try {
+      await c.query(`INSERT INTO reviews (mechanic_id,author_id,booking_id,rating) VALUES ($1,$2,$3,4)`,
+        [mMech.id, cust.id, jobA]);
+    } catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23505', 'a booking can be reviewed once');
+
+    // ── The two averages stay separate, and the blend is never computed.
+    const { rows: [rate] } = await c.query(
+      `SELECT * FROM mechanic_ratings WHERE mechanic_id=$1`, [mMech.id]);
+    eq(Number(rate.verified_count), 1, 'one verified review');
+    eq(Number(rate.public_count), 1, 'one public review');
+    eq(Number(rate.verified_avg), 3, 'verified average stands alone');
+    eq(Number(rate.public_avg), 5, 'public average stands alone');
+    const cols = Object.keys(rate);
+    assert(!cols.some(k => /^(overall|combined|blended|rating)_?avg$/.test(k)),
+      'the view offers no merged rating to accidentally display');
+
+    // ── Revocation takes effect immediately, everywhere.
+    await c.query(`UPDATE host_verifications SET revoked_at=now(), revoked_reason='test' WHERE account_id=$1`, [host.id]);
+    const { rows: [gone] } = await c.query(`SELECT is_verified_host($1) v`, [host.id]);
+    eq(gone.v, false, 'a revoked verification stops conferring the badge at once');
+
+    // ── The demand signal carries its lane, and admits no third value.
+    code = null;
+    await c.query('SAVEPOINT p');
+    try { await c.query(`UPDATE bookings SET audience='admin' WHERE id=$1`, [jobA]); }
+    catch (e) { code = e.code; }
+    await c.query('ROLLBACK TO SAVEPOINT p');
+    eq(code, '23514', 'a booking lane is public or host, nothing else');
+
+    const { rows: [dflt] } = await c.query(`SELECT audience FROM bookings WHERE id=$1`, [jobA]);
+    eq(dflt.audience, 'public', 'and it defaults down, never up');
+
+    await c.query('ROLLBACK');
+
     console.log('\n[test] SCHEMA — ALL CHECKS PASSED');
   } catch (e) {
     failed = true;

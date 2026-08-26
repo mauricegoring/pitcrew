@@ -5,11 +5,12 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "test": "node test/pricing.test.js && node test/labor.test.js && node test/availability.test.js && node test/money.test.js && node test/schema.test.js",
+    "test": "node test/pricing.test.js && node test/labor.test.js && node test/availability.test.js && node test/money.test.js && node test/verification.test.js && node test/schema.test.js",
     "test:pricing": "node test/pricing.test.js",
     "test:labor": "node test/labor.test.js",
     "test:availability": "node test/availability.test.js",
     "test:money": "node test/money.test.js",
+    "test:verification": "node test/verification.test.js",
     "test:schema": "node test/schema.test.js",
     "db:apply": "node scripts/db-apply.js"
   },

@@ -24,6 +24,7 @@ const ORDER = [
   '003-rates-availability.sql',
   '004-bookings.sql',
   '005-money.sql',
+  '006-verification.sql',
 ];
 
 function migrationFiles() {

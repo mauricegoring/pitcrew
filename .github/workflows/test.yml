@@ -22,6 +22,7 @@ jobs:
       - run: npm run test:labor
       - run: npm run test:availability
       - run: npm run test:money
+      - run: npm run test:verification
 
   schema:
     name: SQL migrations (PostgreSQL 16)

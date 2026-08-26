@@ -5,6 +5,13 @@ rate, the platform brings the customer and handles the money, and the whole
 transaction — quote, schedule, authorization, payment, payout — happens in one
 place.
 
+**Two lanes, one track.** Anyone can search, book, and pay; anyone who has
+actually paid for a job can review the mechanic who did it. But a gold-badged
+review comes only from an account proven to be a real, active Turo host — proven
+by their own Turo data. That is the moat: any competitor can list mechanics,
+none can show you what fleet operators think, because none can prove who the
+fleet operators are.
+
 This is a marketplace, not a directory. The distinction is load-bearing: **the
 supply side starts empty.** There is no imported or scraped listing, because a
 listing that cannot take a booking is worse than no listing — it is a dead end
@@ -19,7 +26,8 @@ declared working hours, connected a payout account, and been vetted.
 | `lib/availability.js` | Slot generation against the travel shadow |
 | `lib/labor.js` | Labour estimates, seeded then learned from real jobs |
 | `lib/money.js` | Line items, fee models, and a balanced double-entry ledger |
-| `db/001`–`005` | Taxonomy, identity, rates and availability, bookings, money |
+| `lib/verification.js` | Turo export inspection, lane assignment, review ranking |
+| `db/001`–`006` | Taxonomy, identity, rates and availability, bookings, money, verification |
 
 Every domain module is pure and I/O-free. Pricing and scheduling are the parts
 of this product most likely to be argued about, so they have to be reproducible
@@ -56,6 +64,26 @@ processing is charged on the full ticket including parts and tax, so a fee
 levied only on labour while paying processing on everything goes negative on
 exactly the high-value jobs worth having — `test/money.test.js` demonstrates it
 in both directions.
+
+**The badge cannot be claimed, only earned.** A review's class is stamped by a
+database trigger from the author's verification state at write time; a client
+that sends `reviewer_class: 'verified_host'` gets `public`. A review requires a
+*completed* booking — money that changed hands, not a tapped phone number. One
+Turo export verifies one identity forever, enforced by a unique hash across all
+accounts. And the two averages are never merged into one star rating: a blended
+number hides which lane it came from, and hiding that is the only thing that
+could make the badge worthless.
+
+**The lane never reaches a price.** A verified host is quoted exactly what the
+public is quoted for the same job — `quote()` takes no lane, identity, or
+history parameter, and a test asserts the signature. Lane is a demand signal and
+a ranking input. A trust badge that became a surcharge would destroy the thing
+it was built to protect. Equally, the public lane is never a downgrade: no
+blurred results, no "verify to see prices". The badge adds; it never withholds.
+
+**Verification is free and instant, forever.** It is the acquisition hook, not a
+tier. There is no price anywhere in `lib/verification.js` and there must never
+be one.
 
 **Insurance is coverage lines, not a boolean.** General Liability excludes
 damage to the customer's vehicle in the mechanic's care, custody and control —
