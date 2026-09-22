@@ -27,7 +27,7 @@ declared working hours, connected a payout account, and been vetted.
 | `lib/labor.js` | Labour estimates, seeded then learned from real jobs |
 | `lib/money.js` | Line items, fee models, and a balanced double-entry ledger |
 | `lib/verification.js` | Turo export inspection, lane assignment, review ranking |
-| `lib/demand.js` | Imported HostPitCrew demand — launch readiness, rate guidance |
+| `lib/demand.js` | Imported PitCrew Mechanics demand — launch readiness, rate guidance |
 | `lib/handoff.js` | Signed verification hand-off, so nobody verifies twice |
 | `db/001`–`007` | Taxonomy, identity, rates and availability, bookings, money, verification, ecosystem |
 
@@ -87,13 +87,13 @@ blurred results, no "verify to see prices". The badge adds; it never withholds.
 tier. There is no price anywhere in `lib/verification.js` and there must never
 be one.
 
-**HostPitCrew keeps running as the demand engine.** It holds the SEO surface and
+**PitCrew Mechanics keeps running as the demand engine.** It holds the SEO surface and
 the captured demand; PitCrew holds the transaction. Two things cross the seam and
 nothing else: a signed verification claim, so a host who proved themselves there
 is verified here, and aggregate demand counts. See [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md).
 
 **Imported demand never reaches the pricing engine.** The demand multiplier gates
-on *completed PitCrew bookings* — evidence about our own supply. HostPitCrew
+on *completed PitCrew bookings* — evidence about our own supply. PitCrew Mechanics
 search volume says a metro wants mechanics; it says nothing about whether ours
 are busy, because on day one we have none. Feeding it in would surge-price the
 first customer in a new metro against a supply of zero. `toLaunchSignal()`
