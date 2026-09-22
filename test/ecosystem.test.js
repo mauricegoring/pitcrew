@@ -1,6 +1,6 @@
 // Run: node test/ecosystem.test.js
 //
-// HostPitCrew is the demand engine; PitCrew is the transaction. These tests
+// PitCrew Mechanics is the demand engine; PitCrew is the transaction. These tests
 // cover the seam between them: what crosses, what must not, and the one
 // mistake that would be expensive.
 const D = require('../lib/demand');
@@ -32,7 +32,7 @@ try {
 
   // ── THE IMPORTANT ONE. Imported demand must not unlock the surge multiplier.
   // The multiplier gates on completed bookings — evidence about OUR supply. A
-  // thousand HostPitCrew searches say a metro wants mechanics; they say nothing
+  // thousand PitCrew Mechanics searches say a metro wants mechanics; they say nothing
   // about whether ours are busy, because on day one we have none. Feeding
   // search volume in as `observations` would surge-price the first customer in
   // a brand new metro against a supply of zero.

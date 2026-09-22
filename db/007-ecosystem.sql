@@ -1,16 +1,16 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- 007 — the seam with HostPitCrew.
+-- 007 — the seam with PitCrew Mechanics.
 --
--- HostPitCrew is the demand engine: the SEO surface, the metro x service pages,
+-- PitCrew Mechanics is the demand engine: the SEO surface, the metro x service pages,
 -- and the captured searches and leads. PitCrew is the transaction. They are two
 -- surfaces of one product, which has two consequences stored here.
 --
--- First, a host who proved they are a real Turo host on HostPitCrew is not
+-- First, a host who proved they are a real Turo host on PitCrew Mechanics is not
 -- asked to prove it again. `hostpitcrew` joins the verification methods, and a
 -- hand-off claim is spent exactly once.
 --
 -- Second, imported demand is stored SEPARATELY from anything the pricing engine
--- reads. A metro's HostPitCrew search volume says where to launch; it says
+-- reads. A metro's PitCrew Mechanics search volume says where to launch; it says
 -- nothing about whether our own mechanics are busy, and conflating the two
 -- would surge-price the first customer in a brand-new metro against a supply of
 -- zero. The separation is physical: nothing in the pricing path joins to these
@@ -21,6 +21,10 @@
 -- badge, three ways to earn it, and a single place to ask whether it is held.
 ALTER TABLE host_verifications DROP CONSTRAINT IF EXISTS host_verifications_method_check;
 ALTER TABLE host_verifications ADD CONSTRAINT host_verifications_method_check
+-- 'hostpitcrew' is the stored method value, not a product name. PitCrew
+-- Mechanics was renamed from HostPitCrew on 2026-09-21; this value stayed,
+-- because it is already written into rows and already signed into claims on
+-- the wire. Renaming it rejects the rows we have. See docs/ECOSYSTEM.md.
   CHECK (method IN ('turo_csv','fk_command_center','hostpitcrew'));
 
 ALTER TABLE host_verifications ADD COLUMN IF NOT EXISTS handoff_jti UUID;
@@ -39,16 +43,17 @@ ALTER TABLE host_verifications ADD CONSTRAINT verification_evidence CHECK (
 -- a token captured in transit cannot be replayed into a second account.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_handoff_jti_once
   ON host_verifications (handoff_jti) WHERE handoff_jti IS NOT NULL;
--- And one HostPitCrew identity maps to one PitCrew identity.
+-- And one PitCrew Mechanics identity maps to one PitCrew identity.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_handoff_subject_once
   ON host_verifications (handoff_subject) WHERE handoff_subject IS NOT NULL;
 
 -- ── Imported demand ──────────────────────────────────────────────────────────
 -- Aggregate only, by contract. No email, no host id, no vehicle: a row is a
 -- count, and a count is all PitCrew is entitled to. Individual host data never
--- leaves HostPitCrew's admin surface.
+-- leaves PitCrew Mechanics's admin surface.
 CREATE TABLE IF NOT EXISTS imported_demand (
   id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  -- Provenance stamp, not a name — see the note on `method` above.
   source       TEXT NOT NULL DEFAULT 'hostpitcrew' CHECK (source IN ('hostpitcrew')),
   metro_slug   TEXT NOT NULL,
   service_slug TEXT,
@@ -81,8 +86,8 @@ FROM imported_demand
 GROUP BY metro_slug;
 
 COMMENT ON TABLE imported_demand IS
-  'Aggregate counts from HostPitCrew. Never joined into the pricing path: search volume describes interest, not our own supply.';
+  'Aggregate counts from PitCrew Mechanics. Never joined into the pricing path: search volume describes interest, not our own supply.';
 COMMENT ON VIEW metro_launch_signal IS
   'Where to launch next. Not a pricing input — the demand multiplier gates on completed PitCrew bookings only.';
 COMMENT ON COLUMN host_verifications.handoff_jti IS
-  'Single-use claim id from HostPitCrew. Unique, so a captured token cannot verify a second account.';
+  'Single-use claim id from PitCrew Mechanics. Unique, so a captured token cannot verify a second account.';
